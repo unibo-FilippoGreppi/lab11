@@ -1,12 +1,18 @@
 package it.unibo.oop.workers02;
 
-import java.util.List;
 import java.util.Objects;
-import java.util.stream.DoubleStream;
-
+import java.util.stream.IntStream;
+/**
+ * Implementation using streams.
+ */
 public class MultiThreadedSumMatrix implements SumMatrix {
     private final int nthread;
 
+    /**
+     * 
+     * @param nthread
+     *            no. of thread performing the sum.
+     */
     public MultiThreadedSumMatrix(final int nthread) {
         Objects.requireNonNull(nthread);
         if (nthread <= 0) {
@@ -15,33 +21,48 @@ public class MultiThreadedSumMatrix implements SumMatrix {
         this.nthread = nthread;
     }
 
+    /**
+     * 
+     */
     @Override
-    public double sum(double[][] matrix) {
-        
-
-        return 0;
+    public final double sum(final double[][] matrix) {
+        Objects.requireNonNull(matrix);
+        final int size = matrix.length % nthread + matrix.length / nthread;
+        /*
+         * Build a stream of workers
+         */
+        return IntStream
+            .iterate(0, start -> start + size)
+            .limit(nthread)
+            .mapToObj(start -> new Worker(matrix, start, size))
+            // Start them
+            .peek(Thread::start)
+            // Join them
+            .peek(MultiThreadedSumMatrix::joinUninterruptibly)
+            // Get their result and sum
+           .mapToDouble(Worker::getResult)
+           .sum();
     }
 
-
-    private static final class Worker extends Thread {
-        private final List<Integer> list;
+    private static class Worker extends Thread {
+        private final double[][] matrix;
         private final int startpos;
         private final int nelem;
-        private long res;
+        private double res;
 
         /**
          * Build a new worker.
          * 
-         * @param list
-         *            the list to sum
+         * @param matrix
+         *            the matrix to sum
          * @param startpos
          *            the initial position for this worker
          * @param nelem
          *            the no. of elems to sum up for this worker
          */
-        Worker(final List<Integer> list, final int startpos, final int nelem) {
+        Worker(final double[][] matrix, final int startpos, final int nelem) {
             super();
-            this.list = list;
+            this.matrix = matrix.clone();
             this.startpos = startpos;
             this.nelem = nelem;
         }
@@ -50,19 +71,31 @@ public class MultiThreadedSumMatrix implements SumMatrix {
         @SuppressWarnings("PMD.SystemPrintln")
         public void run() {
             System.out.println("Working from position " + startpos + " to position " + (startpos + nelem - 1));
-            for (int i = startpos; i < list.size() && i < startpos + nelem; i++) {
-                this.res += this.list.get(i);
+            for (int i = startpos; i < matrix.length && i < startpos + nelem; i++) {
+                for (int j = 0; j < matrix[i].length; j++) {
+                    this.res = this.res + this.matrix[i][j];
+                }
             }
         }
 
         /**
-         * Returns the result of summing up the integers within the list.
-         * 
-         * @return the sum of every element in the array
+         * @return the sum of every element in the matrix.
          */
-        public long getResult() {
-            return this.res; 
+        public double getResult() {
+            return this.res;
         }
+    }
 
+    @SuppressWarnings("PMD.AvoidPrintStackTrace")
+    private static void joinUninterruptibly(final Thread target) {
+        var joined = false;
+        while (!joined) {
+            try {
+                target.join();
+                joined = true;
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
     }
 }
